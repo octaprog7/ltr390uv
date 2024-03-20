@@ -39,6 +39,10 @@ if __name__ == '__main__':
 
     show_header(f"UV mode. RAW out! uv_mode: {als.uv_mode}")
 
+    cnt = 0
     for raw in als:
         time.sleep_ms(cct_ms)
         print(f"raw: {raw}")
+        cnt += 1
+        if cnt > 3_000:
+            sys.exit(0)
