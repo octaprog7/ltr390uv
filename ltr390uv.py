@@ -1,5 +1,4 @@
 """Модуль управления LTR-390UV-01, это датчик внешней освещенности и датчик ультрафиолетового света (UVS)"""
-
 # micropython
 # mail: goctaprog@gmail.com
 # MIT license
@@ -74,10 +73,13 @@ class LTR390UV(BaseSensorEx, Iterator):
         # буфер на 3 байта
         self._buf_3 = bytearray((0 for _ in range(3)))
         # настройки, обновляются методом xxx!
+        self._uv_sens = 2300    # чувствительность датчика в UV диапазоне для разрешения отсчета в 18..20 бит!
+        #
         self._uv_mode = None
         self._resolution = None
         self._meas_rate = None
         self._gain = None
+        self._enabled = None
 
     def get_status(self) -> sensor_status:
         """Возвращает состояние датчика"""
@@ -103,6 +105,7 @@ class LTR390UV(BaseSensorEx, Iterator):
         """
         vr = range(6)
         check_value(meas_rate, vr, get_error_str("meas_rate", meas_rate, vr))
+        # 0 - 20 bit
         _resol = 4, 3, 2, 1, 0, 0
         return _resol[meas_rate]
 
@@ -123,10 +126,7 @@ class LTR390UV(BaseSensorEx, Iterator):
     def soft_reset(self):
         """Производит програмный сброс датчика"""
         _reg = self.ctrl_reg
-        _reg.read()
-        # print(f"DBG:soft_reset: 0x{_tmp:x}")
         _reg['soft_reset'] = 1
-        # print(f"DBG:soft_reset: 0x{_tmp:x}")
         _reg.write()
 
     @property
@@ -149,12 +149,32 @@ class LTR390UV(BaseSensorEx, Iterator):
     def uv_mode(self) -> [bool, None]:
         return self._uv_mode
 
+    @property
+    def in_standby(self) -> bool:
+        """Если возвратит Истина, то устройство находится в режиме standby"""
+        return not self._enabled
+
+    @property
+    def uv_sensitivity(self) -> int:
+        """Возвращает чувствительность датчика в UV диапазоне в условных единицах"""
+        return self._uv_sens
+
+    @uv_sensitivity.setter
+    def uv_sensitivity(self, value: int):
+        """Устанавливает чувствительность датчика в UV диапазоне в условных единицах"""
+        rng = range(1, 10_000)
+        check_value(value, rng, get_error_str("UV sensitivity", value, rng))
+        self._uv_sens = value
+
     def set_active(self, value: bool = True):
         """Если value в Истина, то датчик в режиме работа, иначе в режиме ожидания/standby"""
         _reg = self.ctrl_reg
         _reg.read()
         _reg['ALS_UVS_enable'] = value
         _reg.write()
+        #
+        _reg.read()
+        self._enabled = _reg['ALS_UVS_enable']
 
     def start_measurement(self, uv_mode: bool, meas_rate: int = 1, gain: int = 3, enable: bool = True):
         """Производит настройку параметров измерения.
@@ -166,44 +186,48 @@ class LTR390UV(BaseSensorEx, Iterator):
         _reg.read()
         _reg['meas_rate'] = meas_rate
         _reg['resolution'] = LTR390UV._meas_rate_to_resolution(meas_rate)
-        _reg.write()
+        _reg.write()    # запись в регистр meas_rate
         #
         _reg = self._gain_reg
         _reg.read()
         _reg['gain'] = gain
-        _reg.write()
+        _reg.write()    # запись в регистр gain
         #
         _reg = self.ctrl_reg
         _reg.read()
         _reg['ALS_UVS_enable'] = enable
         _reg['UVS_mode'] = uv_mode
-        _reg.write()
+        _reg.write()    # запись в регистр управления
         # читаю настройки из датчика
         _reg = self._meas_rate_reg
-        _reg.read()
+        _reg.read()     # чтение регистра meas_rate
         self._meas_rate = _reg['meas_rate']
         self._resolution = _reg['resolution']
         #
         _reg = self._gain_reg
-        _reg.read()
+        _reg.read()     # чтение регистра gain
         self._gain = _reg['gain']
         #
         _reg = self.ctrl_reg
-        _reg.read()
+        _reg.read()     # чтение регистра управления
         self._uv_mode = _reg['UVS_mode']
+        self._enabled = _reg['ALS_UVS_enable']
 
-    def get_illumination(self, raw: bool = True) -> [int, float]:
+    def get_illumination(self, raw: bool = True, w_fac: float = 1.0) -> [int, float]:
         """Возвращает освещенность в 'сырых' единицах если raw в Истина, или в люксах, если raw в Ложь"""
         addr = 0x10 if self.uv_mode else 0x0D
         buf = self._buf_3
         self.read_buf_from_mem(addr, buf, 1)
         val = buf[0] + 256 * buf[1] + 65536 * buf[2]
-        if raw or self.uv_mode:     # если uv_mode, то только raw! значения в люксах недоступны!
+        # для режима UV значения в UVI недоступны. Производитель привел формулу, которая, по моему мнению, неверна!
+        # поэтому, при переключении в uv_mode вы будете получать от датчика только 'сырые' значения!
+        if raw or self.uv_mode:
             return val
-        # lux. als and not raw
-        _gain = 1, 3, 6, 9, 18  # пересчет gain
+        _gain = 1, 3, 6, 9, 18  # для пересчета gain
         x = 0.25 * 2 ** self.resolution
-        return 0.6 * val / (_gain[self.gain] * x)   # lux
+        _tmp = _gain[self.gain] * x
+        # lux. als
+        return 0.6 * w_fac * val / _tmp   # lux
 
     # Iterator
     def __next__(self) -> [float, int, None]:
