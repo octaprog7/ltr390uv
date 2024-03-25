@@ -17,8 +17,8 @@ if __name__ == '__main__':
     als = ltr390uv.LTR390UV(adapter=adapter)
     _id = als.get_id()
     print(f"Part number id: {_id[0]}; Revision id: {_id[1]};")
-    # als.soft_reset()
-    # time.sleep_ms(20)  # жду 10 мс.
+    als.soft_reset()
+    print("Software reset successfully!")
     #
     als.start_measurement(uv_mode=False)
     cct_ms = als.get_conversion_cycle_time()
