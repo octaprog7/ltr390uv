@@ -1,4 +1,6 @@
 """Модуль управления LTR-390UV-01, это датчик внешней освещенности и датчик ультрафиолетового света (UVS)"""
+import time
+
 # micropython
 # mail: goctaprog@gmail.com
 # MIT license
@@ -128,6 +130,21 @@ class LTR390UV(BaseSensorEx, Iterator):
         _reg = self.ctrl_reg
         _reg['soft_reset'] = 1
         _reg.write()
+        # чтение с ожиданием
+        for i in range(3):
+            time.sleep_ms(10)
+            try:
+                _reg.read()
+                if not _reg['soft_reset']:
+                    break
+            except OSError as ex:
+                if 110 == ex.errno:
+                    pass
+                else:
+                    raise ex
+        else:       # for. break не был выполнен! ошибка программного сброса датчика
+            raise ValueError("soft_reset error!")
+        # выход по break. програмный сброс успешно произведен.
 
     @property
     def gain(self) -> [int, None]:
