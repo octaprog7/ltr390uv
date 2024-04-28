@@ -32,7 +32,7 @@ def _bitmask(bit_rng: range) -> int:
 class BitFields:
     """Хранилище информации о битовых полях с доступом по индексу.
     _source - кортеж именованных кортежей, описывающих битовые поля;"""
-    def __init__(self, fields_info: tuple[bit_field_info]):
+    def __init__(self, fields_info: tuple[bit_field_info, ...]):
         self._fields_info = fields_info
         self._idx = 0
         # имя битового поля, которое будет параметром у методов get_value/set_value
